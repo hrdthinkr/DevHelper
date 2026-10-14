@@ -11,7 +11,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
+import io.github.hrdthinkr.devhelper.presentation.NavGraph
 import io.github.hrdthinkr.devhelper.presentation.screen.home.HomeScreen
 import io.github.hrdthinkr.devhelper.ui.theme.DevHelperTheme
 
@@ -22,24 +24,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DevHelperTheme {
-                HomeScreen()
+                val navController = rememberNavController()
+
+                NavGraph(
+                    navController = navController
+                )
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    DevHelperTheme {
-        Greeting("Android")
     }
 }

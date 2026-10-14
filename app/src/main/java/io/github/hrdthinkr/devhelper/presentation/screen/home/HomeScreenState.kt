@@ -6,5 +6,6 @@ data class HomeScreenState(
     val searchQuery: String = "",
     val tools: List<DevTool> = emptyList(),
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val error: String? = null
 )

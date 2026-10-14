@@ -1,6 +1,8 @@
+
 package io.github.hrdthinkr.devhelper.presentation.screen.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,8 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -32,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -43,9 +48,11 @@ import io.github.hrdthinkr.devhelper.ui.theme.SecondaryText
 
 @Composable
 fun HomeScreen(
-    viewModel: HomeViewModel = hiltViewModel()
+    viewModel: HomeViewModel = hiltViewModel(),
+    onToolClick: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val errorMessage = uiState.error
 
     val filteredTools = uiState.tools.filter { tool ->
         tool.name.contains(uiState.searchQuery, ignoreCase = true) ||
@@ -65,50 +72,99 @@ fun HomeScreen(
         Scaffold(
             containerColor = AppBackground
         ) { innerPadding ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(
-                    start = 20.dp,
-                    top = 28.dp,
-                    end = 20.dp,
-                    bottom = 32.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Header()
-                }
-
-                item {
-                    SearchField(
-                        query = uiState.searchQuery,
-                        onQueryChange = viewModel::onSearchQueryChange
-                    )
-                }
-
-                item {
-                    SectionHeader(
-                        count = filteredTools.size
-                    )
-                }
-
-                if (filteredTools.isEmpty()) {
-                    item {
-                        EmptySearchState()
-                    }
-                } else {
-                    items(
-                        items = filteredTools,
-                        key = { it.id }
-                    ) { tool ->
-                        ToolCard(tool = tool)
+            when {
+                uiState.isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Accent)
                     }
                 }
 
-                item {
-                    Footer()
+                errorMessage != null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Something went wrong",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = errorMessage,
+                            color = SecondaryText,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = viewModel::retryLoading
+                        ) {
+                            Text("Try again")
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            top = 28.dp,
+                            end = 20.dp,
+                            bottom = 32.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Header()
+                        }
+
+                        item {
+                            SearchField(
+                                query = uiState.searchQuery,
+                                onQueryChange = viewModel::onSearchQueryChange
+                            )
+                        }
+
+                        item {
+                            SectionHeader(count = filteredTools.size)
+                        }
+
+                        if (filteredTools.isEmpty()) {
+                            item {
+                                EmptySearchState()
+                            }
+                        } else {
+                            items(
+                                items = filteredTools,
+                                key = { it.id }
+                            ) { tool ->
+                                ToolCard(
+                                    tool = tool,
+                                    onClick = onToolClick
+                                )
+                            }
+                        }
+
+                        item {
+                            Footer()
+                        }
+                    }
                 }
             }
         }
@@ -251,10 +307,15 @@ private fun SectionHeader(
 
 @Composable
 private fun ToolCard(
-    tool: DevTool
+    tool: DevTool,
+    onClick: (String) -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onClick(tool.id)
+            },
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = CardBackground
