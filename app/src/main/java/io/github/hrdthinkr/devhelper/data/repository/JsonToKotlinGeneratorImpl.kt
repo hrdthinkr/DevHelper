@@ -39,15 +39,26 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
         json: JsonObject,
         classes: MutableMap<String, String>
     ) {
+        val usedNames = mutableSetOf<String>()
+
         val properties = json.map { (key, value) ->
             val propertyName = key.toPropertyName()
+
+            var uniqueName = propertyName
+            var suffix = 2
+
+            while (!usedNames.add(uniqueName)) {
+                uniqueName = "${propertyName}${suffix}"
+                suffix++
+            }
+
             val type = inferType(
-                propertyName.toClassName(),
+                uniqueName.toClassName(),
                 value,
                 classes
             )
 
-            "    val $propertyName: $type"
+            "    val $uniqueName: $type"
         }
 
         classes[name] = buildString {
