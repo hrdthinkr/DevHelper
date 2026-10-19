@@ -1,5 +1,8 @@
 package io.github.hrdthinkr.devhelper.presentation.screen.json
 
+import android.content.ClipData
+import android.graphics.drawable.Icon
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,8 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedCard
@@ -17,8 +23,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import io.github.hrdthinkr.devhelper.presentation.components.KotlinCodeText
+import kotlinx.coroutines.launch
 
 @Composable
 fun JsonToKotlinScreen(
@@ -27,6 +39,9 @@ fun JsonToKotlinScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    val clipboard = LocalClipboard.current
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
@@ -105,22 +120,59 @@ fun JsonToKotlinScreen(
                 )
             }
 
-            if (uiState.generatedCode.isNotBlank()) {
-                Text(
-                    text = "Generated Kotlin",
-                    style = MaterialTheme.typography.titleMedium
-                )
 
+            if (uiState.generatedCode.isNotBlank()) {
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = uiState.generatedCode,
+                    Column(
                         modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Generated Kotlin",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        clipboard.setClipEntry(
+                                            ClipEntry(
+                                                ClipData.newPlainText(
+                                                    "Generated Kotlin",
+                                                    uiState.generatedCode
+                                                )
+                                            )
+                                        )
+
+                                        Toast.makeText(
+                                            context,
+                                            "Code copied!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = "copy",
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            }
+                        }
+
+                        SelectionContainer {
+                            KotlinCodeText(uiState.generatedCode)
+                        }
+                    }
                 }
             }
+
         }
     }
 
