@@ -67,4 +67,72 @@ class JsonToKotlinGeneratorTest {
         assertTrue(result.contains("val name: String"))
         assertTrue(result.contains("val age: Int"))
     }
+
+    @Test
+    fun generate_invalidJson_throwsException() {
+        val generator = JsonToKotlinGeneratorImpl()
+
+        val json = """{"name": }"""
+
+        try {
+            generator.generate(json, "User")
+            throw AssertionError("Expected IllegalArgumentException")
+        } catch (exception: IllegalArgumentException) {
+            assertTrue(exception.message == "Invalid JSON")
+        }
+    }
+
+    @Test
+    fun generate_sameNestedObjectNames_createsDifferentClasses() {
+        val generator = JsonToKotlinGeneratorImpl()
+
+        val json = """
+        {
+            "user": {
+                "name": "Alex"
+            },
+            "admin": {
+                "role": "admin"
+            }
+        }
+    """.trimIndent()
+
+        val result = generator.generate(json, "Response")
+
+        assertTrue(result.contains("data class Response("))
+        assertTrue(result.contains("data class User("))
+        assertTrue(result.contains("data class Admin("))
+        assertTrue(result.contains("val user: User"))
+        assertTrue(result.contains("val admin: Admin"))
+        assertTrue(result.contains("val name: String"))
+        assertTrue(result.contains("val role: String"))
+    }
+
+    @Test
+    fun generate_sameNestedClassNames_doesNotLoseFields() {
+        val generator = JsonToKotlinGeneratorImpl()
+
+        val json = """
+        {
+            "user": {
+                "profile": {
+                    "name": "Alex"
+                }
+            },
+            "admin": {
+                "profile": {
+                    "role": "admin"
+                }
+            }
+        }
+    """.trimIndent()
+
+        val result = generator.generate(json, "Response")
+
+        assertTrue(result.contains("data class Response("))
+        assertTrue(result.contains("data class User("))
+        assertTrue(result.contains("data class Admin("))
+        assertTrue(result.contains("val name: String"))
+        assertTrue(result.contains("val role: String"))
+    }
 }

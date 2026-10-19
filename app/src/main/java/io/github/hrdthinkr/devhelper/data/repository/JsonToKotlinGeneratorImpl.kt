@@ -29,7 +29,14 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
         }
 
         val classes = linkedMapOf<String, String>()
-        generateClass(className.toClassName(), root, classes)
+        val usedClassNames = mutableSetOf<String>()
+
+        generateClass(
+            className.toClassName(),
+            root,
+            classes,
+            usedClassNames
+        )
 
         return classes.values.joinToString("\n\n")
     }
@@ -37,62 +44,97 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
     private fun generateClass(
         name: String,
         json: JsonObject,
-        classes: MutableMap<String, String>
-    ) {
-        val usedNames = mutableSetOf<String>()
+        classes: MutableMap<String, String>,
+        usedClassNames: MutableSet<String>
+    ): String {
+        // Резервируем имя ДО обработки вложенных объектов.
+        val className = uniqueClassName(name, usedClassNames)
+
+        val usedPropertyNames = mutableSetOf<String>()
 
         val properties = json.map { (key, value) ->
             val propertyName = key.toPropertyName()
 
-            var uniqueName = propertyName
+            var uniquePropertyName = propertyName
             var suffix = 2
 
-            while (!usedNames.add(uniqueName)) {
-                uniqueName = "${propertyName}${suffix}"
+            while (!usedPropertyNames.add(uniquePropertyName)) {
+                uniquePropertyName = "${propertyName}${suffix}"
                 suffix++
             }
 
             val type = inferType(
-                uniqueName.toClassName(),
+                uniquePropertyName.toClassName(),
                 value,
-                classes
+                classes,
+                usedClassNames
             )
 
-            "    val $uniqueName: $type"
+            "    val $uniquePropertyName: $type"
         }
 
-        classes[name] = buildString {
-            appendLine("data class $name(")
+        classes[className] = buildString {
+            appendLine("data class $className(")
             append(properties.joinToString(",\n"))
             appendLine()
             append(")")
         }
+
+        return className
+    }
+
+    private fun uniqueClassName(
+        name: String,
+        usedNames: MutableSet<String>
+    ): String {
+        if (usedNames.add(name)) return name
+
+        var suffix = 2
+
+        while (!usedNames.add("${name}${suffix}")) {
+            suffix++
+        }
+
+        return "${name}${suffix}"
     }
 
     private fun inferType(
         name: String,
         value: JsonElement,
-        classes: MutableMap<String, String>
+        classes: MutableMap<String, String>,
+        usedClassNames: MutableSet<String>
     ): String {
         return when (value) {
             is JsonObject -> {
-                val nestedName = name.ifBlank { "NestedObject" }
-                generateClass(nestedName, value, classes)
-                nestedName
+                generateClass(
+                    name.ifBlank { "NestedObject" },
+                    value,
+                    classes,
+                    usedClassNames
+                )
             }
 
-            is JsonArray -> inferArrayType(name, value, classes)
+            is JsonArray -> inferArrayType(
+                name,
+                value,
+                classes,
+                usedClassNames
+            )
 
             is JsonNull -> "Any?"
 
             is JsonPrimitive -> when {
                 value.isString -> "String"
+
                 value.content == "true" ||
                         value.content == "false" -> "Boolean"
 
                 value.content.toIntOrNull() != null -> "Int"
+
                 value.content.toLongOrNull() != null -> "Long"
+
                 value.content.toDoubleOrNull() != null -> "Double"
+
                 else -> "Any?"
             }
         }
@@ -101,12 +143,34 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
     private fun inferArrayType(
         name: String,
         array: JsonArray,
-        classes: MutableMap<String, String>
+        classes: MutableMap<String, String>,
+        usedClassNames: MutableSet<String>
     ): String {
         if (array.isEmpty()) return "List<Any?>"
 
+        // Для массива объектов собираем поля из всех элементов,
+        // чтобы не потерять свойства, которые есть не у каждого объекта.
+        if (array.all { it is JsonObject }) {
+            val mergedFields = linkedMapOf<String, JsonElement>()
+
+            array.filterIsInstance<JsonObject>().forEach { obj ->
+                obj.forEach { (key, value) ->
+                    mergedFields.putIfAbsent(key, value)
+                }
+            }
+
+            val elementClassName = generateClass(
+                name,
+                JsonObject(mergedFields),
+                classes,
+                usedClassNames
+            )
+
+            return "List<$elementClassName>"
+        }
+
         val types = array.map {
-            inferType(name, it, classes)
+            inferType(name, it, classes, usedClassNames)
         }.distinct()
 
         val elementType = types.singleOrNull() ?: "Any?"
