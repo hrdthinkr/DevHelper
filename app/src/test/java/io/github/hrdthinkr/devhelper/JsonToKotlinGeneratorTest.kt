@@ -135,4 +135,53 @@ class JsonToKotlinGeneratorTest {
         assertTrue(result.contains("val name: String"))
         assertTrue(result.contains("val role: String"))
     }
+
+    @Test
+    fun generate_arrayOfObjectsWithDifferentFields_makesMissingFieldsNullable() {
+        val generator = JsonToKotlinGeneratorImpl()
+
+        val json = """
+        {
+            "users": [
+                {
+                    "name": "Alex",
+                    "age": 20
+                },
+                {
+                    "name": "Kate",
+                    "city": "Moscow"
+                }
+            ]
+        }
+    """.trimIndent()
+
+        val result = generator.generate(json, "Response")
+
+        assertTrue(result.contains("val name: String"))
+        assertTrue(result.contains("val age: Int?"))
+        assertTrue(result.contains("val city: String?"))
+    }
+
+    @Test
+    fun generate_arrayOfObjectsWithNullValue_makesPropertyNullable() {
+        val generator = JsonToKotlinGeneratorImpl()
+
+        val json = """
+        {
+            "users": [
+                {
+                    "age": 20
+                },
+                {
+                    "age": null
+                }
+            ]
+        }
+    """.trimIndent()
+
+        val result = generator.generate(json, "Response")
+
+        assertTrue(result.contains("val age: Int?"))
+    }
+
 }

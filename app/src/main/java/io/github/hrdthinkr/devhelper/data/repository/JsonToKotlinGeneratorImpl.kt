@@ -1,3 +1,4 @@
+
 package io.github.hrdthinkr.devhelper.data.repository
 
 import io.github.hrdthinkr.devhelper.domain.generator.JsonToKotlinGenerator
@@ -31,9 +32,9 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
         val classes = linkedMapOf<String, String>()
         val usedClassNames = mutableSetOf<String>()
 
-        generateClass(
+        generateClassFromObjects(
             className.toClassName(),
-            root,
+            listOf(root),
             classes,
             usedClassNames
         )
@@ -41,18 +42,20 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
         return classes.values.joinToString("\n\n")
     }
 
-    private fun generateClass(
+    private fun generateClassFromObjects(
         name: String,
-        json: JsonObject,
+        objects: List<JsonObject>,
         classes: MutableMap<String, String>,
         usedClassNames: MutableSet<String>
     ): String {
-        // Резервируем имя ДО обработки вложенных объектов.
         val className = uniqueClassName(name, usedClassNames)
-
         val usedPropertyNames = mutableSetOf<String>()
 
-        val properties = json.map { (key, value) ->
+        val keys = objects
+            .flatMap { it.keys }
+            .distinct()
+
+        val properties = keys.map { key ->
             val propertyName = key.toPropertyName()
 
             var uniquePropertyName = propertyName
@@ -63,11 +66,17 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
                 suffix++
             }
 
-            val type = inferType(
+            val values = objects.mapNotNull { it[key] }
+
+            val isMissingInSomeObjects =
+                values.size < objects.size
+
+            val type = inferMergedType(
                 uniquePropertyName.toClassName(),
-                value,
+                values,
                 classes,
-                usedClassNames
+                usedClassNames,
+                isMissingInSomeObjects
             )
 
             "    val $uniquePropertyName: $type"
@@ -98,45 +107,85 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
         return "${name}${suffix}"
     }
 
-    private fun inferType(
+    private fun inferMergedType(
         name: String,
-        value: JsonElement,
+        values: List<JsonElement>,
         classes: MutableMap<String, String>,
-        usedClassNames: MutableSet<String>
+        usedClassNames: MutableSet<String>,
+        missingInSomeObjects: Boolean = false
     ): String {
-        return when (value) {
-            is JsonObject -> {
-                generateClass(
+        val containsNull = values.any { it is JsonNull }
+        val nonNullValues = values.filterNot { it is JsonNull }
+
+        val baseType = when {
+            nonNullValues.isEmpty() -> "Any?"
+
+            nonNullValues.all { it is JsonObject } -> {
+                generateClassFromObjects(
                     name.ifBlank { "NestedObject" },
-                    value,
+                    nonNullValues.filterIsInstance<JsonObject>(),
                     classes,
                     usedClassNames
                 )
             }
 
-            is JsonArray -> inferArrayType(
-                name,
-                value,
-                classes,
-                usedClassNames
-            )
+            nonNullValues.all { it is JsonArray } -> {
+                val combinedArray = JsonArray(
+                    nonNullValues
+                        .filterIsInstance<JsonArray>()
+                        .flatMap { it }
+                )
 
-            is JsonNull -> "Any?"
+                inferArrayType(
+                    name,
+                    combinedArray,
+                    classes,
+                    usedClassNames
+                )
+            }
 
-            is JsonPrimitive -> when {
+            nonNullValues.all { it is JsonPrimitive } -> {
+                inferPrimitiveTypes(
+                    nonNullValues.filterIsInstance<JsonPrimitive>()
+                )
+            }
+
+            else -> "Any?"
+        }
+
+        val nullable = containsNull || missingInSomeObjects
+
+        return if (nullable && baseType != "Any?" &&
+            !baseType.endsWith("?")
+        ) {
+            "$baseType?"
+        } else {
+            baseType
+        }
+    }
+
+    private fun inferPrimitiveTypes(
+        values: List<JsonPrimitive>
+    ): String {
+        val types = values.map { value ->
+            when {
                 value.isString -> "String"
-
                 value.content == "true" ||
                         value.content == "false" -> "Boolean"
-
                 value.content.toIntOrNull() != null -> "Int"
-
                 value.content.toLongOrNull() != null -> "Long"
-
                 value.content.toDoubleOrNull() != null -> "Double"
-
                 else -> "Any?"
             }
+        }.distinct()
+
+        return when {
+            types.size == 1 -> types.first()
+            types.all { it == "Int" || it == "Long" } -> "Long"
+            types.all {
+                it == "Int" || it == "Long" || it == "Double"
+            } -> "Double"
+            else -> "Any?"
         }
     }
 
@@ -148,34 +197,50 @@ class JsonToKotlinGeneratorImpl @Inject constructor() :
     ): String {
         if (array.isEmpty()) return "List<Any?>"
 
-        // Для массива объектов собираем поля из всех элементов,
-        // чтобы не потерять свойства, которые есть не у каждого объекта.
-        if (array.all { it is JsonObject }) {
-            val mergedFields = linkedMapOf<String, JsonElement>()
+        val nonNullValues = array.filterNot { it is JsonNull }
+        val containsNull = nonNullValues.size < array.size
 
-            array.filterIsInstance<JsonObject>().forEach { obj ->
-                obj.forEach { (key, value) ->
-                    mergedFields.putIfAbsent(key, value)
-                }
-            }
+        if (nonNullValues.isEmpty()) {
+            return "List<Any?>"
+        }
 
-            val elementClassName = generateClass(
+        val elementType = if (nonNullValues.all { it is JsonObject }) {
+            generateClassFromObjects(
                 name,
-                JsonObject(mergedFields),
+                nonNullValues.filterIsInstance<JsonObject>(),
                 classes,
                 usedClassNames
             )
+        } else {
+            val types = nonNullValues.map { value ->
+                inferMergedType(
+                    name,
+                    listOf(value),
+                    classes,
+                    usedClassNames
+                )
+            }.distinct()
 
-            return "List<$elementClassName>"
+            when {
+                types.size == 1 -> types.first()
+                types.all { it == "Int" || it == "Long" } -> "Long"
+                types.all {
+                    it == "Int" || it == "Long" || it == "Double"
+                } -> "Double"
+                else -> "Any?"
+            }
         }
 
-        val types = array.map {
-            inferType(name, it, classes, usedClassNames)
-        }.distinct()
+        val nullableElementType =
+            if (containsNull && elementType != "Any?" &&
+                !elementType.endsWith("?")
+            ) {
+                "$elementType?"
+            } else {
+                elementType
+            }
 
-        val elementType = types.singleOrNull() ?: "Any?"
-
-        return "List<$elementType>"
+        return "List<$nullableElementType>"
     }
 
     private fun String.toClassName(): String {
